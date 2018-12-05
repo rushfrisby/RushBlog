@@ -1,0 +1,118 @@
+﻿@model IDictionary<int, string>
+@{
+	ViewData["Title"] = "Section Editor";
+}
+
+<div class="page-info">
+	<h2 class="pull-left">Section Editor</h2>
+	<div class="pull-right">&nbsp;</div>
+	<div class="clear"></div>
+</div>
+
+<div class="row">
+	<div class="col-md-12">
+		<div class="form-group">
+			<select id="templateSectionId" class="form-control">
+				<option value="">Select a section...</option>
+				@foreach (var item in Model.OrderBy(x => x.Value))
+				{
+					<option value="@item.Key">@item.Value</option>
+				}
+			</select>
+		</div>
+	</div>
+</div>
+<div class="row">
+	<div class="col-md-12">
+		<div class="form-group">
+			<textarea id="content" class="form-control fullwidth" style="min-height: 400px;"></textarea>
+		</div>
+	</div>
+</div>
+<div class="row">
+	<div class="col-md-12">
+		<div class="form-group">
+			<a href="#" id="lnkSave" class="btn btn-success"><i class="fa fa-check fa-text-right"></i>Save</a>
+			<a href="#" id="lnkCancel" class="btn btn-default"><i class="fa fa-times fa-text-right"></i>Cancel</a>
+		</div>
+	</div>
+</div>
+
+
+@section scripts
+	{
+	<script type="text/javascript">
+		var ajaxRequest = null;
+
+		$(function () {
+			$("#templateSectionId").change(function (e) {
+				if ($(this).val() === "") {
+					$("#content").val("");
+				}
+				else {
+					loadContent();
+				}
+			});
+			$("#lnkSave").click(function (e) {
+				e.preventDefault();
+				saveContent();
+			});
+			$("#lnkCancel").click(function (e) {
+				e.preventDefault();
+				$("#content").val("");
+				$("#templateSectionId").val("");
+			});
+		});
+
+		function loadContent() {
+			if (ajaxRequest !== null) {
+				ajaxRequest.abort();
+			}
+
+			var requestData = $("#templateSectionId").val();
+
+			ajaxRequest = $.ajax({
+				type: "POST",
+				url: "/Section/Get",
+				contentType: "application/json",
+				data: JSON.stringify(requestData),
+				success: function (responseData) {
+					ajaxRequest = null;
+					$("#content").val(responseData);
+				},
+				error: function () {
+					ajaxRequest = null;
+				}
+			});
+		}
+
+		function saveContent() {
+			if (ajaxRequest !== null) {
+				ajaxRequest.abort();
+			}
+
+			var requestData =
+			{
+				Id: $("#templateSectionId").val(),
+				Content: $("#content").val()
+			};
+
+			if (requestData.Id === "") {
+				return;
+			}
+
+			ajaxRequest = $.ajax({
+				type: "POST",
+				url: "/Section/Update",
+				contentType: "application/json",
+				data: JSON.stringify(requestData),
+				success: function (responseData) {
+					ajaxRequest = null;
+				},
+				error: function () {
+					ajaxRequest = null;
+				}
+			});
+		}
+	</script>
+}

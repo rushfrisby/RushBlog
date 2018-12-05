@@ -1,0 +1,151 @@
+﻿@model RushBlog.Common.BlogPost
+
+@{
+	ViewData["Title"] = "Add";
+}
+
+<div class="page-info">
+	<h2 class="pull-left">New Blog Post</h2>
+	<div class="pull-right">
+		&nbsp;
+	</div>
+	<div class="clear"></div>
+</div>
+
+<form id="frmForm" asp-action="Add">
+
+	<div class="row">
+		<div class="col-md-12">
+			<div asp-validation-summary="ModelOnly" class="text-danger"></div>
+			<input asp-for="HtmlContent" type="hidden" />
+		</div>
+	</div>
+	<div class="row">
+		<div class="col-md-6">
+			<div class="form-group">
+				<label asp-for="Title" class="control-label"></label>
+				<input asp-for="Title" class="form-control fullwidth" />
+				<span asp-validation-for="Title" class="text-danger"></span>
+			</div>
+		</div>
+		<div class="col-md-6">
+			<div class="form-group">
+				<label asp-for="Slug" class="control-label"></label>
+				<input asp-for="Slug" class="form-control fullwidth" />
+				<span asp-validation-for="Slug" class="text-danger"></span>
+			</div>
+		</div>
+	</div>
+	<div class="row-full">
+		<div class="editorArea">
+			<div class="col-md-6">
+				<div class="form-group">
+					<label asp-for="MarkdownContent" class="control-label"></label>
+					<textarea asp-for="MarkdownContent" class="form-control fullwidth"></textarea>
+					<span asp-validation-for="MarkdownContent" class="text-danger"></span>
+				</div>
+			</div>
+			<div class="col-md-6">
+				<div class="form-group">
+					<label asp-for="HtmlContent" class="control-label"></label><br/>
+					<iframe id="HtmlContentPreview" class="previewArea fullwidth" src="javascript:void(0);" frameborder="0" style="width:100%;"></iframe>
+				</div>
+			</div>
+			<div class="clear"></div>
+		</div>
+	</div>
+	<div class="row">
+		<div class="col-md-3">
+			<div class="form-group">
+				&nbsp;<br />
+				<a id="lnkSave" href="#" class="btn btn-success"><i class="fa fa-check fa-text-right"></i>Save</a>
+				<a asp-action="Index" class="btn btn-default"><i class="fa fa-times fa-text-right"></i>Cancel</a>
+			</div>
+		</div>
+		<div class="col-md-3">
+			<div class="form-group">
+				<label asp-for="PublishedOn" class="control-label"></label>
+				<input asp-for="PublishedOn" class="form-control datepicker" />
+				<span asp-validation-for="PublishedOn" class="text-danger"></span>
+			</div>
+		</div>
+		<div class="col-md-2">
+			<div class="form-group">
+				&nbsp;<br />
+				<div class="checkbox">
+					<label>
+						<input asp-for="IsPublished" /> @Html.DisplayNameFor(model => model.IsPublished)
+					</label>
+				</div>
+			</div>
+		</div>
+		<div class="col-md-2">
+			<div class="form-group">
+				&nbsp;<br />
+				<div class="checkbox">
+					<label>
+						<input asp-for="IsPage" /> @Html.DisplayNameFor(model => model.IsPage)
+					</label>
+				</div>
+			</div>
+		</div>
+	</div>
+</form>
+
+@section Scripts
+{
+<script type="text/javascript">
+
+	var editor = null;
+
+	$(function ()
+	{
+		$("#lnkSave").click(function (e) {
+			e.preventDefault();
+			$("#frmForm").submit();
+		});
+
+		$("#Title").on("keyup keypress blur change", function (e) {
+			$("#Slug").val(slugify($(this).val()));
+		});
+
+		var MarkdownContent = document.getElementById('MarkdownContent');
+
+		editor = CodeMirror.fromTextArea(MarkdownContent,
+		{
+			mode: 'markdown',
+			lineNumbers: false,
+			theme: "default",
+			extraKeys: { "Enter": "newlineAndIndentContinueMarkdownList" },
+			lineWrapping: true
+		});
+
+		editor.setSize(null, 400);
+
+		editor.on('change', function () {
+			convertToHtml();
+		});
+
+		var charWidth = editor.defaultCharWidth(), basePadding = 4;
+		editor.on("renderLine", function (cm, line, elt) {
+			var off = CodeMirror.countColumn(line.text, null, cm.getOption("tabSize")) * charWidth;
+			elt.style.textIndent = "-" + off + "px";
+			elt.style.paddingLeft = (basePadding + off) + "px";
+		});
+
+		editor.refresh();
+	});
+
+	function convertToHtml()
+	{
+		var text = editor.getValue();
+		//var target = document.getElementById('HtmlContentPreview');
+		var converter = new showdown.Converter();
+		var html = converter.makeHtml(text);
+		//target.innerHTML = html;
+
+		$("#HtmlContentPreview").contents().find('html').html(html);
+		$("#HtmlContent").val(html);
+	}
+</script>
+}
