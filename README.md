@@ -1,0 +1,2 @@
+# RushBlog
+Blog manager app
