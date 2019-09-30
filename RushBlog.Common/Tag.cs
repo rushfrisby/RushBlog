@@ -1,4 +1,6 @@
-﻿namespace RushBlog.Common
+﻿using System;
+
+namespace RushBlog.Common
 {
 	public class Tag
 	{
@@ -7,5 +9,7 @@
 		public string Name { get; set; }
 
 		public string Slug { get; set; }
+
+        public Guid BlogPostId { get; set; }
 	}
 }

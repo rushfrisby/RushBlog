@@ -6,9 +6,4 @@
 		<RuntimeIdentifiers>win10-x86</RuntimeIdentifiers>
 	</PropertyGroup>
 
-	<ItemGroup>
-		<ProjectReference Include="..\RushBlog.Common\RushBlog.Common.csproj" />
-		<ProjectReference Include="..\RushBlog.DataAccess\RushBlog.DataAccess.csproj" />
-	</ItemGroup>
-
 </Project>
