@@ -35,6 +35,11 @@ namespace RushBlog.StaticSiteGenerator
                     PrintHelp();
                     return;
                 }
+                if (string.Equals("init", args[0], StringComparison.InvariantCultureIgnoreCase))
+                {
+                    InitializeDirectory(args);
+                    return;
+                }
                 if (string.Equals("new", args[0], StringComparison.InvariantCultureIgnoreCase))
                 {
                     await CreateNewPost(args);
@@ -54,6 +59,49 @@ namespace RushBlog.StaticSiteGenerator
             Console.WriteLine("Commands:");
             Console.WriteLine($"\t new \t Adds an entry to posts.json and creates a new Markdown file.");
             Console.WriteLine($"\t gen \t Generates the site from source within the `{BrushDirectoryName}` directory.");
+        }
+
+        private static void InitializeDirectory(string[] args)
+        {
+            var baseDirectoryPath = Directory.GetCurrentDirectory();
+            if (args.Length > 1)
+            {
+                baseDirectoryPath = args[1];
+            }
+
+            BaseDirectory = new DirectoryInfo(baseDirectoryPath);
+            if (!BaseDirectory.Exists)
+            {
+                Console.WriteLine($"{BaseDirectory.FullName} doesn't exist");
+                return;
+            }
+
+            BrushDirectory = new DirectoryInfo(Path.Combine(BaseDirectory.FullName, BrushDirectoryName));
+            if (!BrushDirectory.Exists)
+            {
+                BrushDirectory.Create();
+                Console.WriteLine($"Created directory {BrushDirectory.FullName}");
+                return;
+            }
+
+            var postsJsonFileName = "";
+            var tagsJsonFileName = "";
+            var configYmlFileName = "";
+            var cnameFileName = "";
+            var publishShFileName = "";
+            var readmeFileName = "";
+            var gitIgnoreFileName = "";
+            var postsDirectory = "";
+            var templatesDirectory = "";
+
+            /*
+             * 404
+             * Default_Title
+             * Footer
+             * Header
+             * Post_Footer
+             * Unpublished_Post
+             */
         }
 
         private static async Task CreateNewPost(string[] args)
