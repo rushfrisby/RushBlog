@@ -224,6 +224,7 @@ namespace RushBlog.StaticSiteGenerator
         private static void PrintHelp()
         {
             Console.WriteLine("Commands:");
+            Console.WriteLine($"\t init [directory] \t Initializes the current directory, or the directory passed in using the second parameter.");
             Console.WriteLine($"\t new \t Adds an entry to posts.json and creates a new Markdown file.");
             Console.WriteLine($"\t gen \t Generates the site from source within the `{DataDirectoryName}` directory.");
         }
