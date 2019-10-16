@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace RushBlog.StaticSiteGenerator
+namespace RushBlog.StaticSiteGenerator.Models
 {
     public class BlogPost
     {

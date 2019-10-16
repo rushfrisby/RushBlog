@@ -1,30 +1,42 @@
-﻿using Markdig;
+﻿using HandlebarsDotNet;
+using Markdig;
 using Newtonsoft.Json;
+using RushBlog.StaticSiteGenerator.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using System.Web;
 
 namespace RushBlog.StaticSiteGenerator
 {
     class Program
     {
-        private const string BrushDirectoryName = "_brush";
+        private const string DataDirectoryName = ".blogdata";
         private const string TemplatesDirectoryName = "templates";
         private const string PostsDirectoryName = "posts";
-        private const string TitleMarker = "{Title}";
+        private const string PartialsDirectoryName = "partials";
+        private const string TagDirectoryName = "tag";
         private const string DefaultMarkdownContentFormat = "[//]: # ({0})\r\n";
+        private const string PostsJsonFileName = "posts.json";
+        private const string TagsJsonFileName = "tags.json";
+        private const string PostHtmlFileName = "post.html";
+        private const string PageHtmlFileName = "page.html";
+        private const string TagHtmlFileName = "tag.html";
 
-        private static string HeaderContent;
-		private static string FooterContent;
         private static DirectoryInfo BaseDirectory;
-        private static DirectoryInfo BrushDirectory;
+        private static DirectoryInfo DataDirectory;
         private static DirectoryInfo TemplatesDirectory;
         private static DirectoryInfo PostsDirectory;
+        private static DirectoryInfo PartialsDirectory;
+        private static DirectoryInfo TagDirectory;
+        private static FileInfo PostsFile;
+        private static FileInfo TagsFile;
+        private static FileInfo PostTemplateFile;
+        private static FileInfo PageTemplateFile;
+        private static FileInfo TagTemplateFile;
+        private static Dictionary<int, Func<object, string>> CompiledTemplateCache;
 
         static async Task Main(string[] args)
 		{
@@ -37,7 +49,7 @@ namespace RushBlog.StaticSiteGenerator
                 }
                 if (string.Equals("init", args[0], StringComparison.InvariantCultureIgnoreCase))
                 {
-                    InitializeDirectory(args);
+                    await SetIoInfo(args);
                     return;
                 }
                 if (string.Equals("new", args[0], StringComparison.InvariantCultureIgnoreCase))
@@ -54,77 +66,171 @@ namespace RushBlog.StaticSiteGenerator
             PrintHelp();
         }
 
+        private static async Task SetIoInfo(string[] args)
+        {
+            var baseDirectoryPath = Directory.GetCurrentDirectory();
+            if (args.Length > 1)
+            {
+                baseDirectoryPath = args[1];
+            }
+
+            BaseDirectory = new DirectoryInfo(baseDirectoryPath);
+            if (!BaseDirectory.Exists)
+            {
+                Console.WriteLine($"{BaseDirectory.FullName} doesn't exist");
+                return;
+            }
+
+            DataDirectory = new DirectoryInfo(Path.Combine(BaseDirectory.FullName, DataDirectoryName));
+            if (!DataDirectory.Exists)
+            {
+                DataDirectory.Create();
+                Console.WriteLine($"Created directory {DataDirectory.FullName}");
+            }
+
+            PostsDirectory = new DirectoryInfo(Path.Combine(DataDirectory.FullName, PostsDirectoryName));
+            if(!PostsDirectory.Exists)
+            {
+                PostsDirectory.Create();
+                Console.WriteLine($"Created directory {PostsDirectory.FullName}");
+            }
+
+            TemplatesDirectory = new DirectoryInfo(Path.Combine(DataDirectory.FullName, TemplatesDirectoryName));
+            if (!TemplatesDirectory.Exists)
+            {
+                TemplatesDirectory.Create();
+                Console.WriteLine($"Created directory {TemplatesDirectory.FullName}");
+            }
+
+            PartialsDirectory = new DirectoryInfo(Path.Combine(DataDirectory.FullName, PartialsDirectoryName));
+            if (!PartialsDirectory.Exists)
+            {
+                PartialsDirectory.Create();
+                Console.WriteLine($"Created directory {PartialsDirectory.FullName}");
+            }
+
+            TagDirectory = new DirectoryInfo(Path.Combine(BaseDirectory.FullName, TagDirectoryName));
+            if (!TagDirectory.Exists)
+            {
+                TagDirectory.Create();
+                Console.WriteLine($"Created directory {TagDirectory.FullName}");
+            }
+
+            PostsFile = new FileInfo(Path.Combine(DataDirectory.FullName, PostsJsonFileName));
+            if (!PostsFile.Exists)
+            {
+                var blogPost = new BlogPost
+                {
+                    PublishedOn = DateTimeOffset.UtcNow,
+                    IsPublished = false,
+                    IsPage = false,
+                    Tags = new string[] { "blogging" },
+                    Title = "My First Blog Post",
+                    Slug = "my-first-blog-post"
+                };
+                var json = JsonConvert.SerializeObject(new[] { blogPost }, Formatting.Indented);
+                await File.WriteAllTextAsync(PostsFile.FullName, json);
+                Console.WriteLine($"Created file {PostsFile.FullName}");
+
+                var mdFileName = Path.Combine(PostsDirectory.FullName, $"{blogPost.Slug}.md");
+                await File.WriteAllTextAsync(mdFileName, string.Format(DefaultMarkdownContentFormat, blogPost.Title));
+                Console.WriteLine($"Created file {mdFileName}");
+            }
+
+            TagsFile = new FileInfo(Path.Combine(DataDirectory.FullName, TagsJsonFileName));
+            if (!TagsFile.Exists)
+            {
+                var d = new Dictionary<string, string>
+                {
+                    { "blogging", "Blogging" }
+                };
+                var json = JsonConvert.SerializeObject(d, Formatting.Indented);
+                await File.WriteAllTextAsync(TagsFile.FullName, json);
+
+                Console.WriteLine($"Created file {TagsFile.FullName}");
+            }
+
+
+            PostTemplateFile = new FileInfo(Path.Combine(TemplatesDirectory.FullName, PostHtmlFileName));
+            if(!PostTemplateFile.Exists)
+            {
+                await File.WriteAllTextAsync(PostTemplateFile.FullName, "");
+                Console.WriteLine($"Created file {PostTemplateFile.FullName}");
+            }
+
+            PageTemplateFile = new FileInfo(Path.Combine(TemplatesDirectory.FullName, PageHtmlFileName));
+            if (!PageTemplateFile.Exists)
+            {
+                await File.WriteAllTextAsync(PageTemplateFile.FullName, "");
+                Console.WriteLine($"Created file {PageTemplateFile.FullName}");
+            }
+
+            TagTemplateFile = new FileInfo(Path.Combine(TemplatesDirectory.FullName, TagHtmlFileName));
+            if (!TagTemplateFile.Exists)
+            {
+                await File.WriteAllTextAsync(TagTemplateFile.FullName, "");
+                Console.WriteLine($"Created file {TagTemplateFile.FullName}");
+            }
+        }
+
+        private static async Task<MasterModel> GetMasterModel()
+        {
+            var model = new MasterModel();
+
+            var postsJson = await File.ReadAllTextAsync(PostsFile.FullName);
+            model.SourceData = JsonConvert.DeserializeObject<BlogPostDetail[]>(postsJson);
+
+            foreach(var item in model.SourceData)
+            {
+                var fileName = Path.Combine(PostsDirectory.FullName, $"{item.Slug}.md");
+                if (File.Exists(fileName))
+                {
+                    var markdownContent = await File.ReadAllTextAsync(fileName);
+                    item.Content = Markdown.ToHtml(markdownContent);
+                }
+                else
+                {
+                    item.Content = "";
+                }
+                item.MasterModel = model;
+            }
+
+            var tags = model.PublishedPosts.SelectMany(x => x.Tags).Distinct();
+            var tagsJson = await File.ReadAllTextAsync(TagsFile.FullName);
+            var tagDisplayNames = JsonConvert.DeserializeObject<Dictionary<string, string>>(tagsJson);
+            var tagSummaries = new List<TagSummary>();
+            foreach(var tag in tags)
+            {
+                var displayName = tag;
+                if(tagDisplayNames.ContainsKey(tag))
+                {
+                    displayName = tagDisplayNames[tag];
+                }
+                var taggedBlogPosts = model.PublishedPosts.Where(x => x.Tags.Contains(tag)).OrderByDescending(x => x.PublishedOn.Value);
+                tagSummaries.Add(new TagSummary
+                {
+                    Tag = tag,
+                    DisplayName = displayName,
+                    TimesUsed = taggedBlogPosts.Count(),
+                    BlogPosts = taggedBlogPosts,
+                    MasterModel = model
+                });
+            }
+            model.Tags = tagSummaries;
+
+            return model;
+        }
+
         private static void PrintHelp()
         {
             Console.WriteLine("Commands:");
             Console.WriteLine($"\t new \t Adds an entry to posts.json and creates a new Markdown file.");
-            Console.WriteLine($"\t gen \t Generates the site from source within the `{BrushDirectoryName}` directory.");
-        }
-
-        private static void InitializeDirectory(string[] args)
-        {
-            var baseDirectoryPath = Directory.GetCurrentDirectory();
-            if (args.Length > 1)
-            {
-                baseDirectoryPath = args[1];
-            }
-
-            BaseDirectory = new DirectoryInfo(baseDirectoryPath);
-            if (!BaseDirectory.Exists)
-            {
-                Console.WriteLine($"{BaseDirectory.FullName} doesn't exist");
-                return;
-            }
-
-            BrushDirectory = new DirectoryInfo(Path.Combine(BaseDirectory.FullName, BrushDirectoryName));
-            if (!BrushDirectory.Exists)
-            {
-                BrushDirectory.Create();
-                Console.WriteLine($"Created directory {BrushDirectory.FullName}");
-                return;
-            }
-
-            var postsJsonFileName = "";
-            var tagsJsonFileName = "";
-            var configYmlFileName = "";
-            var cnameFileName = "";
-            var publishShFileName = "";
-            var readmeFileName = "";
-            var gitIgnoreFileName = "";
-            var postsDirectory = "";
-            var templatesDirectory = "";
-
-            /*
-             * 404
-             * Default_Title
-             * Footer
-             * Header
-             * Post_Footer
-             * Unpublished_Post
-             */
+            Console.WriteLine($"\t gen \t Generates the site from source within the `{DataDirectoryName}` directory.");
         }
 
         private static async Task CreateNewPost(string[] args)
         {
-            var baseDirectoryPath = Directory.GetCurrentDirectory();
-            if (args.Length > 1)
-            {
-                baseDirectoryPath = args[1];
-            }
-
-            BaseDirectory = new DirectoryInfo(baseDirectoryPath);
-            if (!BaseDirectory.Exists)
-            {
-                Console.WriteLine($"{BaseDirectory.FullName} doesn't exist");
-                return;
-            }
-
-            BrushDirectory = new DirectoryInfo(Path.Combine(BaseDirectory.FullName, BrushDirectoryName));
-            if (!BrushDirectory.Exists)
-            {
-                Console.WriteLine($"{BrushDirectory.FullName} doesn't exist");
-                return;
-            }
+            await SetIoInfo(args);
 
             var blogPost = new BlogPost
             {
@@ -135,10 +241,10 @@ namespace RushBlog.StaticSiteGenerator
             };
 
             Console.Write("Post Title: ");
-            blogPost.Title = Console.ReadLine();
+            blogPost.Title = Console.ReadLine().Trim();
             blogPost.Slug = GenerateSlug(blogPost.Title);
 
-            var postsJsonFileName = Path.Combine(BrushDirectory.FullName, "posts.json");
+            var postsJsonFileName = Path.Combine(DataDirectory.FullName, "posts.json");
             var postsJson = await File.ReadAllTextAsync(postsJsonFileName);
             var allBlogPosts = JsonConvert.DeserializeObject<List<BlogPost>>(postsJson);
 
@@ -147,7 +253,6 @@ namespace RushBlog.StaticSiteGenerator
             postsJson = JsonConvert.SerializeObject(allBlogPosts, Formatting.Indented);
             await File.WriteAllTextAsync(postsJsonFileName, postsJson);
 
-            PostsDirectory = new DirectoryInfo(Path.Combine(BrushDirectory.FullName, PostsDirectoryName));
             var mdFileName = Path.Combine(PostsDirectory.FullName, $"{blogPost.Slug}.md");
             await File.WriteAllTextAsync(mdFileName, string.Format(DefaultMarkdownContentFormat, blogPost.Title));
         }
@@ -163,323 +268,133 @@ namespace RushBlog.StaticSiteGenerator
 
         private static async Task GenerateSite(string[] args)
         {
-            var baseDirectoryPath = Directory.GetCurrentDirectory();
-            if (args.Length > 1)
+            await SetIoInfo(args);
+            var model = await GetMasterModel();
+
+            await RegisterPartials();
+            var templates = await GetTemplates();
+
+            var postTemplateKey = PostHtmlFileName.Replace(PostTemplateFile.Extension, "");
+            var pageTemplateKey = PageHtmlFileName.Replace(PageTemplateFile.Extension, "");
+            var tagTemplateKey = TagHtmlFileName.Replace(TagTemplateFile.Extension, "");
+
+            var postTemplate = templates.FirstOrDefault(x => x.Key == postTemplateKey);
+            var pageTemplate = templates.FirstOrDefault(x => x.Key == pageTemplateKey);
+            var tagTemplate = templates.FirstOrDefault(x => x.Key == tagTemplateKey);
+
+            templates.Remove(postTemplateKey);
+            templates.Remove(pageTemplateKey);
+            templates.Remove(tagTemplateKey);
+            
+            foreach(var template in templates)
             {
-                baseDirectoryPath = args[1];
+                var fileName = Path.Combine(BaseDirectory.FullName, $"{template.Key}.html");
+                await CompileTemplateAndSaveFile(fileName, template.Value, model);
             }
 
-            BaseDirectory = new DirectoryInfo(baseDirectoryPath);
-            if (!BaseDirectory.Exists)
+            foreach (var post in model.SourceData.Where(x => !x.IsPage))
             {
-                Console.WriteLine($"{BaseDirectory.FullName} doesn't exist");
-                return;
+                var fileName = Path.Combine(BaseDirectory.FullName, $"{post.Slug}.html");
+                await CompileTemplateAndSaveFile(fileName, postTemplate.Value, post);
             }
 
-            BrushDirectory = new DirectoryInfo(Path.Combine(BaseDirectory.FullName, BrushDirectoryName));
-            if (!BrushDirectory.Exists)
+            foreach (var page in model.SourceData.Where(x => x.IsPage))
             {
-                Console.WriteLine($"{BrushDirectory.FullName} doesn't exist");
-                return;
+                var fileName = Path.Combine(BaseDirectory.FullName, $"{page.Slug}.html");
+                await CompileTemplateAndSaveFile(fileName, pageTemplate.Value, page);
             }
 
-            TemplatesDirectory = new DirectoryInfo(Path.Combine(BrushDirectory.FullName, TemplatesDirectoryName));
-            PostsDirectory = new DirectoryInfo(Path.Combine(BrushDirectory.FullName, PostsDirectoryName));
-
-            var postsJsonFileName = Path.Combine(BrushDirectory.FullName, "posts.json");
-            var postsJson = await File.ReadAllTextAsync(postsJsonFileName);
-            var allBlogPosts = JsonConvert.DeserializeObject<IEnumerable<BlogPost>>(postsJson);
-
-            var tagsJsonFileName = Path.Combine(BrushDirectory.FullName, "tags.json");
-            var tagsJson = await File.ReadAllTextAsync(tagsJsonFileName);
-            var tags = JsonConvert.DeserializeObject<Dictionary<string, string>>(tagsJson);
-
-            var publishedBlogPosts = from x in allBlogPosts
-                                     where x.IsPublished
-                                     where x.PublishedOn.HasValue
-                                     where x.PublishedOn.Value <= DateTimeOffset.Now
-                                     select x;
-
-            var unpublishedBlogPosts = from x in allBlogPosts
-                                       where !x.IsPublished || !x.PublishedOn.HasValue || x.PublishedOn.Value > DateTimeOffset.Now
-                                       select x;
-
-            HeaderContent = await GetTemplateContent("Header");
-
-            var footerContent = await GetTemplateContent("Footer");
-            FooterContent = footerContent.Replace("{Latest}", GetLatestArticlesSidebox(publishedBlogPosts));
-
-            var title = await GetTemplateContent("Default_Title");
-            var postFooter = await GetTemplateContent("Post_Footer");
-            var unpublishedTemplate = await GetTemplateContent("Unpublished_Post");
-
-            await CreateBlogPosts(publishedBlogPosts, postFooter);
-            await CreateIndexPage(publishedBlogPosts, title);
-            await CreateMainTagPage(tags, publishedBlogPosts);
-            await CreateDatePage(publishedBlogPosts);
-            await CreateUnpublishedRedirects(unpublishedTemplate, unpublishedBlogPosts);
-            await Create404Page(title);
+            foreach (var tag in model.Tags)
+            {
+                var fileName = Path.Combine(TagDirectory.FullName, $"{tag.Tag}.html");
+                await CompileTemplateAndSaveFile(fileName, tagTemplate.Value, tag);
+            }
         }
 
-		private static async Task CreateBlogPosts(IEnumerable<BlogPost> blogPosts, string postFooter)
-		{
-			foreach (var blogPost in blogPosts)
-			{
-				var sb = new StringBuilder();
-				sb.AppendLine(HeaderContent.Replace(TitleMarker, HttpUtility.HtmlEncode(blogPost.Title)));
-				sb.AppendLine(await GetPostContainer(blogPost, postFooter));
-				sb.AppendLine(FooterContent);
-
-				var fileName = $"{blogPost.Slug}.html";
-				var fullFileName = Path.Combine(BaseDirectory.FullName, fileName);
-
-				Console.WriteLine($"Writing file {fullFileName}");
-
-				await File.WriteAllTextAsync(fullFileName, sb.ToString());
-			}
-		}
-
-		private static async Task<string> GetPostContainer(BlogPost blogPost, string postFooter = null)
-		{
-            var mdFileName = Path.Combine(PostsDirectory.FullName, $"{blogPost.Slug}.md");
-            var mdContent = "";
-            if(File.Exists(mdFileName))
+        private static async Task CompileTemplateAndSaveFile(string fileName, string template, object data)
+        {
+            var content = "";
+            Func<object, string> compiledTemplate = x => "";
+            var cacheKey = template.GetHashCode();
+            if(CompiledTemplateCache == null)
             {
-                mdContent = await File.ReadAllTextAsync(mdFileName);
+                CompiledTemplateCache = new Dictionary<int, Func<object, string>>();
+            }
+
+            if(CompiledTemplateCache.ContainsKey(cacheKey))
+            {
+                compiledTemplate = CompiledTemplateCache[cacheKey];
             }
             else
             {
-                await File.WriteAllTextAsync(mdFileName, string.Format(DefaultMarkdownContentFormat, blogPost.Title));
-                Console.WriteLine($"Writing file {mdFileName}");
+                try
+                {
+                    if (template != null)
+                    {
+                        compiledTemplate = Handlebars.Compile(template);
+                        CompiledTemplateCache.Add(cacheKey, compiledTemplate);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("");
+                    Console.WriteLine("*** Error compiling template ***");
+                    Console.WriteLine(fileName);
+                    Console.WriteLine(ex.Message);
+                    Console.WriteLine("");
+
+                    content = "Error compiling template: " + ex.Message;
+                }
             }
-            var htmlContent = Markdown.ToHtml(mdContent);
 
-			var sb = new StringBuilder();
-			sb.AppendLine("<article class='post'>");
-			sb.AppendLine("<header class='post-header'>");
-			sb.AppendLine($"<a href='/{blogPost.Slug}'><h1 class='post-title'>{HttpUtility.HtmlEncode(blogPost.Title)}</h1></a>");
-			sb.AppendLine("<section class='post-meta'>");
-			sb.AppendLine($"<time class='post-date' datetime='{blogPost.PublishedOn.Value.DateTime.ToString("yyyy-MM-dd")}'>{blogPost.PublishedOn.Value.DateTime.ToLongDateString()}</time>");
-			sb.AppendLine("</section>");
-			sb.AppendLine("</header>");
-			sb.AppendLine("<section class='post-content'>");
-			sb.AppendLine(htmlContent);
-			sb.AppendLine("</section>");
-
-			sb.AppendLine("<footer class='post-footer'>");
-			sb.AppendLine("</footer>");
-
-			if (!string.IsNullOrWhiteSpace(postFooter))
-			{
-				sb.AppendLine(postFooter);
-			}
-
-			sb.AppendLine("</article>");
-			return sb.ToString();
-		}
-
-		private static async Task CreateIndexPage(IEnumerable<BlogPost> blogPosts, string title)
-		{
-			var latestPosts = blogPosts.Where(x => !x.IsPage).OrderByDescending(x => x.PublishedOn.Value).Take(5);
-
-			var sb = new StringBuilder();
-			sb.AppendLine(HeaderContent.Replace(TitleMarker, HttpUtility.HtmlEncode(title)));
-
-			foreach (var blogPost in latestPosts)
-			{
-				sb.AppendLine(await GetPostContainer(blogPost));
-			}
-
-			sb.AppendLine(FooterContent);
-
-			var fileName = $"index.html";
-			var fullFileName = Path.Combine(BaseDirectory.FullName, fileName);
-
-			Console.WriteLine($"Writing file {fullFileName}");
-
-			await File.WriteAllTextAsync(fullFileName, sb.ToString());
-		}
-
-		private static async Task CreateMainTagPage(Dictionary<string, string> tagLookup, IEnumerable<BlogPost> blogPosts)
-		{
-			var tagFolder = Path.Combine(BaseDirectory.FullName, "tag");
-			if(!Directory.Exists(tagFolder))
-			{
-				Directory.CreateDirectory(tagFolder);
-			}
-
-			var sb = new StringBuilder();
-			sb.AppendLine(HeaderContent.Replace(TitleMarker, HttpUtility.HtmlEncode("Tags")));
-
-			var tagCloud = new StringBuilder();
-			var postsPerTag = new StringBuilder();
-
-            var tags = blogPosts.SelectMany(x => x.Tags).Distinct();
-
-			foreach (var tag in tags.OrderBy(x => x))
-			{
-				var tagPosts = blogPosts.Where(x => x.Tags.Contains(tag)).OrderByDescending(x => x.PublishedOn.Value);
-				var count = tagPosts.Count();
-
-                var tagName = tag;
-                if(tagLookup.ContainsKey(tag))
-                {
-                    tagName = tagLookup[tag].Trim();
-                }
-
-				tagCloud.AppendLine($"<a href='#{tag}' class='tag'>{HttpUtility.HtmlEncode(tagName)} ({count})</a>");
-
-				postsPerTag.AppendLine($"<div class='tagList'>");
-				postsPerTag.AppendLine($"<a class='tag' name='{tag}' href='/tag/{tag}'>{HttpUtility.HtmlEncode(tagName)} ({count})</a>");
-				postsPerTag.AppendLine("<ol>");
-				foreach(var blogPost in tagPosts.OrderByDescending(x => x.PublishedOn.Value))
-				{
-					postsPerTag.AppendLine($"<li><span class='date'>{HttpUtility.HtmlEncode(blogPost.PublishedOn.Value.DateTime.ToShortDateString())}</span><a href='/{blogPost.Slug}' class='title'>{HttpUtility.HtmlEncode(blogPost.Title)}</a></li>");
-				}
-				postsPerTag.AppendLine("</ol>");
-                postsPerTag.AppendLine($"</div>");
-
-                await CreateTagPage(tag, tagName, tagFolder, tagPosts);
-			}
-
-            sb.AppendLine("<h2>Tag Cloud</h2>");
-			sb.AppendLine("<div class='tagCloud'>");
-			sb.AppendLine(tagCloud.ToString());
-			sb.AppendLine("</div>");
-
-            sb.AppendLine("<h2>Posts by Tag</h2>");
-            sb.AppendLine("<div class='tagListContainer'>");
-			sb.AppendLine(postsPerTag.ToString());
-			sb.AppendLine("</div>");
-
-			sb.AppendLine(FooterContent);
-
-			var fileName = $"tags.html";
-			var fullFileName = Path.Combine(BaseDirectory.FullName, fileName);
-
-			Console.WriteLine($"Writing file {fullFileName}");
-
-			await File.WriteAllTextAsync(fullFileName, sb.ToString());
-		}
-
-		private static async Task CreateTagPage(string tag, string tagName, string tagFolder, IEnumerable<BlogPost> blogPosts)
-		{
-            var sb = new StringBuilder();
-
-			sb.AppendLine(HeaderContent.Replace(TitleMarker, HttpUtility.HtmlEncode(tagName)));
-
-			sb.AppendLine($"<h2 class='tag'>{HttpUtility.HtmlEncode(tagName)}</h2>");
-
-			foreach(var blogPost in blogPosts)
-			{
-				sb.AppendLine(await GetPostContainer(blogPost));
-			}
-
-			sb.AppendLine(FooterContent);
-
-			var fileName = $"{tag}.html";
-			var fullFileName = Path.Combine(tagFolder, fileName);
-
-			Console.WriteLine($"Writing file {fullFileName}");
-
-			await File.WriteAllTextAsync(fullFileName, sb.ToString());
-		}
-
-		private static async Task CreateDatePage(IEnumerable<BlogPost> blogPosts)
-		{
-			var sb = new StringBuilder();
-
-			sb.AppendLine(HeaderContent.Replace(TitleMarker, HttpUtility.HtmlEncode("Archive")));
-
-			sb.AppendLine($"<h2 class='archive'>Archive</h2>");
-
-			var currentYear = 0;
-
-			var filteredBlogPosts = blogPosts.Where(x => !x.IsPage);
-
-			foreach (var blogPost in filteredBlogPosts.OrderByDescending(x => x.PublishedOn.Value))
-			{
-				if(currentYear != blogPost.PublishedOn.Value.Year)
-				{
-					if(currentYear != 0)
-					{
-						sb.AppendLine("</ol>");
-					}
-					currentYear = blogPost.PublishedOn.Value.Year;
-					sb.AppendLine($"<h3 class='year'>{currentYear}</h3>");
-					sb.AppendLine("<ol>");
-				}
-				sb.AppendLine($"<li><span class='date'>{HttpUtility.HtmlEncode(blogPost.PublishedOn.Value.DateTime.ToShortDateString())}</span><a href='/{blogPost.Slug}' class='title'>{HttpUtility.HtmlEncode(blogPost.Title)}</a></li>");
-			}
-			if(filteredBlogPosts.Count() > 0)
-			{
-				sb.AppendLine("</ol>");
-			}
-
-			sb.AppendLine(FooterContent);
-
-			var fileName = $"archive.html";
-			var fullFileName = Path.Combine(BaseDirectory.FullName, fileName);
-
-			Console.WriteLine($"Writing file {fullFileName}");
-
-			await File.WriteAllTextAsync(fullFileName, sb.ToString());
-		}
-
-		private static async Task CreateUnpublishedRedirects(string pageContent, IEnumerable<BlogPost> blogPosts)
-		{
-			foreach (var blogPost in blogPosts)
-			{
-                var mdFileName = Path.Combine(PostsDirectory.FullName, $"{blogPost.Slug}.md");
-                if (!File.Exists(mdFileName))
-                {
-                    await File.WriteAllTextAsync(mdFileName, string.Format(DefaultMarkdownContentFormat, blogPost.Title));
-                    Console.WriteLine($"Writing file {mdFileName}");
-                }
-
-                var html = pageContent.Replace(TitleMarker, HttpUtility.HtmlEncode(blogPost.Title));
-				var fileName = Path.Combine(BaseDirectory.FullName, $"{blogPost.Slug}.html");
-				Console.WriteLine($"Writing file {fileName}");
-				await File.WriteAllTextAsync(fileName, html);
-			}
-		}
-
-		private static string GetLatestArticlesSidebox(IEnumerable<BlogPost> blogPosts)
-		{
-			var sb = new StringBuilder();
-			sb.AppendLine("<div class='box sidebox latest-articles'>");
-			sb.AppendLine("<div class='sidebox-title'>Latest Articles</div>");
-			sb.AppendLine("<div class='sidebox-content'>");
-
-			var latestBlogPosts = blogPosts.Where(x => !x.IsPage).OrderByDescending(x => x.PublishedOn.Value).Take(5);
-			foreach (var blogPost in latestBlogPosts)
-			{
-				sb.AppendLine($"<a href='/{blogPost.Slug}'><div class='date'>{blogPost.PublishedOn.Value.DateTime.ToString("d MMM yyyy").ToUpper()}</div><div>{HttpUtility.HtmlEncode(blogPost.Title)}</div></a>");
-			}
-			sb.AppendLine("</div>");
-			sb.AppendLine("</div>");
-			return sb.ToString();
-		}
-
-		private static async Task Create404Page(string title)
-		{
-			var sb = new StringBuilder();
-			sb.AppendLine(HeaderContent.Replace(TitleMarker, HttpUtility.HtmlEncode(title)));
-            sb.AppendLine(await GetTemplateContent("404"));
-			sb.AppendLine(FooterContent);
-			var fileName = Path.Combine(BaseDirectory.FullName, "404.html");
-			Console.WriteLine($"Writing file {fileName}");
-			await File.WriteAllTextAsync(fileName, sb.ToString());
-		}
-
-        private static async Task<string> GetTemplateContent(string name)
-        {
-            var fileName = Path.Combine(TemplatesDirectory.FullName, $"{name}.html");
-            if(!File.Exists(fileName))
+            try
             {
-                return "";
+                content = compiledTemplate(data);
             }
-            return await File.ReadAllTextAsync(fileName);
+            catch (Exception ex)
+            {
+                Console.WriteLine("");
+                Console.WriteLine("*** Error applying template ***");
+                Console.WriteLine(fileName);
+                Console.WriteLine(ex.Message);
+                Console.WriteLine("");
+
+                content = "Error applying template: " + ex.Message;
+            }
+
+            try
+            {
+                await File.WriteAllTextAsync(fileName, content);
+            }
+            catch(Exception ex)
+            {
+                Console.WriteLine("");
+                Console.WriteLine("*** Error writing file ***");
+                Console.WriteLine(fileName);
+                Console.WriteLine(ex.Message);
+                Console.WriteLine("");
+            }
         }
-	}
+
+        private static async Task<IDictionary<string, string>> GetTemplates()
+        {
+            var d = new Dictionary<string, string>();
+            foreach (var file in TemplatesDirectory.GetFiles())
+            {
+                var content = await File.ReadAllTextAsync(file.FullName);
+                d.Add(file.Name.Replace(file.Extension, ""), content);
+            }
+            return d;
+        }
+
+        private static async Task RegisterPartials()
+        {
+            foreach (var file in PartialsDirectory.GetFiles())
+            {
+                var name = file.Name.Replace(file.Extension, "");
+                var content = await File.ReadAllTextAsync(file.FullName);
+                Handlebars.RegisterTemplate(name, content);
+            }
+        }
+    }
 }
