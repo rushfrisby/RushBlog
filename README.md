@@ -11,11 +11,13 @@
     <td>Adds an entry to posts.json and creates a new Markdown file.</td>
   </tr>
   <tr>
-    <td>`gen`</td>
-    <td>Generates the site from source within the _.blogdata_ directory.</td>
+    <td><pre>gen</pre></td>
+    <td>Generates the site from source within the <i>.blogdata</i> directory.</td>
   </tr>
   <tr>
     <td><pre>help</pre></td>
     <td>Prints a help message.</td>
   </tr>
 </table>
+
+`test`
