@@ -192,7 +192,6 @@ namespace RushBlog.StaticSiteGenerator
                 {
                     item.Content = "";
                 }
-                item.MasterModel = model;
             }
 
             var tags = model.PublishedPosts.SelectMany(x => x.Tags).Distinct();
@@ -212,8 +211,7 @@ namespace RushBlog.StaticSiteGenerator
                     Tag = tag,
                     DisplayName = displayName,
                     TimesUsed = taggedBlogPosts.Count(),
-                    BlogPosts = taggedBlogPosts,
-                    MasterModel = model
+                    BlogPosts = taggedBlogPosts
                 });
             }
             model.Tags = tagSummaries;
@@ -223,10 +221,16 @@ namespace RushBlog.StaticSiteGenerator
 
         private static void PrintHelp()
         {
+            Console.WriteLine("");
             Console.WriteLine("Commands:");
-            Console.WriteLine($"\t init [directory] \t Initializes the current directory, or the directory passed in using the second parameter.");
-            Console.WriteLine($"\t new \t Adds an entry to posts.json and creates a new Markdown file.");
-            Console.WriteLine($"\t gen \t Generates the site from source within the `{DataDirectoryName}` directory.");
+            Console.WriteLine("");
+            Console.WriteLine($"\t init [directory] \t Initializes a directory.");
+            Console.WriteLine("");
+            Console.WriteLine($"\t new [directory] \t Adds an entry to posts.json and creates a new Markdown file.");
+            Console.WriteLine("");
+            Console.WriteLine($"\t gen [directory] \t Generates the site from source within the `{DataDirectoryName}` directory.");
+            Console.WriteLine("");
+            Console.WriteLine(" * If [directory] is omitted then the current directory is assumed.");
         }
 
         private static async Task CreateNewPost(string[] args)
@@ -272,6 +276,7 @@ namespace RushBlog.StaticSiteGenerator
             await SetIoInfo(args);
             var model = await GetMasterModel();
 
+            RegisterHelpers();
             await RegisterPartials();
             var templates = await GetTemplates();
 
@@ -289,26 +294,34 @@ namespace RushBlog.StaticSiteGenerator
             
             foreach(var template in templates)
             {
+                model.SelectedPost = null;
+                model.SelectedTag = null;
                 var fileName = Path.Combine(BaseDirectory.FullName, $"{template.Key}.html");
                 await CompileTemplateAndSaveFile(fileName, template.Value, model);
             }
 
             foreach (var post in model.SourceData.Where(x => !x.IsPage))
             {
+                model.SelectedPost = post;
+                model.SelectedTag = null;
                 var fileName = Path.Combine(BaseDirectory.FullName, $"{post.Slug}.html");
-                await CompileTemplateAndSaveFile(fileName, postTemplate.Value, post);
+                await CompileTemplateAndSaveFile(fileName, postTemplate.Value, model);
             }
 
             foreach (var page in model.SourceData.Where(x => x.IsPage))
             {
+                model.SelectedPost = page;
+                model.SelectedTag = null;
                 var fileName = Path.Combine(BaseDirectory.FullName, $"{page.Slug}.html");
-                await CompileTemplateAndSaveFile(fileName, pageTemplate.Value, page);
+                await CompileTemplateAndSaveFile(fileName, pageTemplate.Value, model);
             }
 
             foreach (var tag in model.Tags)
             {
+                model.SelectedPost = null;
+                model.SelectedTag = tag;
                 var fileName = Path.Combine(TagDirectory.FullName, $"{tag.Tag}.html");
-                await CompileTemplateAndSaveFile(fileName, tagTemplate.Value, tag);
+                await CompileTemplateAndSaveFile(fileName, tagTemplate.Value, model);
             }
         }
 
@@ -358,6 +371,12 @@ namespace RushBlog.StaticSiteGenerator
                 Console.WriteLine("*** Error applying template ***");
                 Console.WriteLine(fileName);
                 Console.WriteLine(ex.Message);
+
+                if(ex.InnerException != null)
+                {
+                    Console.WriteLine($"\t- {ex.InnerException.Message}");
+                }
+
                 Console.WriteLine("");
 
                 content = "Error applying template: " + ex.Message;
@@ -396,6 +415,31 @@ namespace RushBlog.StaticSiteGenerator
                 var content = await File.ReadAllTextAsync(file.FullName);
                 Handlebars.RegisterTemplate(name, content);
             }
+        }
+
+        private static void RegisterHelpers()
+        {
+            Handlebars.RegisterHelper("formatDate", (writer, context, args) =>
+            {
+                if (args == null || args.Length == 0 || args[0] == null)
+                {
+                    return;
+                }
+                var formatSpecifier = "d";
+                if (args.Length > 1 && args[1] != null && !string.IsNullOrWhiteSpace(args[1].ToString()))
+                {
+                    formatSpecifier = args[1].ToString().Trim();
+                }
+                try
+                {
+                    var dto = (DateTimeOffset)args[0];
+                    writer.Write(dto.ToString(formatSpecifier));
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("formatDate Error: " + ex.Message);
+                }
+            });
         }
     }
 }

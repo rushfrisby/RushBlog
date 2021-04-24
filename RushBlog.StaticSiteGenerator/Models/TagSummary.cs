@@ -11,7 +11,5 @@ namespace RushBlog.StaticSiteGenerator.Models
         public int TimesUsed { get; set; }
 
         public IEnumerable<BlogPostDetail> BlogPosts { get; set; }
-
-        public MasterModel MasterModel { get; set; }
     }
 }

@@ -7,6 +7,14 @@ namespace RushBlog.StaticSiteGenerator.Models
     {
         public IEnumerable<BlogPostDetail> SourceData { get; set; }
 
+        public IEnumerable<BlogPostDetail> RecentPosts
+        {
+            get
+            {
+                return PublishedPosts?.Take(5);
+            }
+        }
+
         public IEnumerable<BlogPostDetail> PublishedPosts
         {
             get
@@ -27,7 +35,7 @@ namespace RushBlog.StaticSiteGenerator.Models
         {
             get
             {
-                return SourceData?.Where(x => x.IsPage && x.IsPublished && x.PublishedOn.HasValue).OrderByDescending(x => x.PublishedOn.Value);
+                return SourceData?.Where(x => x.IsPage && x.IsPublished && x.PublishedOn.HasValue).OrderBy(x => x.Title);
             }
         }
 
@@ -40,5 +48,9 @@ namespace RushBlog.StaticSiteGenerator.Models
         }
 
         public IEnumerable<TagSummary> Tags { get; set; }
+
+        public TagSummary SelectedTag { get; set; }
+
+        public BlogPostDetail SelectedPost { get; set; }
     }
 }
